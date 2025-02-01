@@ -2,12 +2,13 @@ package migrate
 
 import (
 	"fmt"
-	"log/slog"
 	"strconv"
 
+	"github.com/lyricat/goutils/qdrant"
 	"github.com/quailyquaily/gzk9000/store"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func NewCmd() *cobra.Command {
@@ -83,39 +84,25 @@ func NewCmd() *cobra.Command {
 			return store.WithContext(cmd.Context()).MigrationCreate(args[0])
 		},
 	})
-	// temp
 	cmd.AddCommand(&cobra.Command{
-		Use:   "fill-payee-id",
-		Short: "",
+		Use:   "init-vector",
+		Short: "Initialize vector tables",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			tx := store.WithContext(ctx)
-
-			lps := make([]struct {
-				ID         uint64
-				ListID     uint64
-				EvmAddress string
-			}, 0)
-			if err := tx.Raw("select id, list_id, evm_address from list_payments;").Scan(&lps).Error; err != nil {
-				slog.Error("[migrate] failed to get list and evm_address", "error", err)
+			qd := qdrant.New(qdrant.Config{
+				Addr:   viper.GetString("qdrant.addr"),
+				APIKey: viper.GetString("qdrant.api_key"),
+			})
+			if err := qd.CreateCollection(ctx, qdrant.CreateCollectionParams{
+				CollectionName: viper.GetString("sys.collections.fact"),
+				VectorSize:     1536,
+				Indexes: []qdrant.CreateCollectionIndexItem{{
+					Name: "fact_id", Type: "int",
+				}, {
+					Name: "agent_id", Type: "int",
+				}},
+			}); err != nil {
 				return err
-			}
-
-			var result struct {
-				ID     uint64
-				UserID uint64
-			}
-			for _, lp := range lps {
-				if err := tx.Raw(fmt.Sprintf("select id, user_id from lists where id =%d limit 1;", lp.ListID)).Scan(&result).Error; err != nil {
-					slog.Error("[migrate] failed to get list id and user id", "error", err)
-					return err
-				}
-				if result.ID != 0 {
-					// tx.Exec(fmt.Sprintf("update list_payments set payee_id = %d where id = %d;", result.UserID, lp.ID))
-					sql := fmt.Sprintf("update user_payouts set evm_address ='%s' where user_id = %d;", lp.EvmAddress, result.UserID)
-					slog.Info("[migrate] update sql", "sql", sql)
-					tx.Exec(sql)
-				}
 			}
 			return nil
 		},

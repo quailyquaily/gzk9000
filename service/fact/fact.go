@@ -1,4 +1,4 @@
-package memory
+package fact
 
 import (
 	"context"
@@ -12,23 +12,27 @@ import (
 func New(
 	cfg Config,
 	aiInst *ai.Instant, qd *qdrant.QdrantClient,
+	facts core.FactStore,
 ) *service {
 	return &service{
 		cfg:    cfg,
 		aiInst: aiInst,
 		qd:     qd,
+		facts:  facts,
 	}
 }
 
 type (
 	Config struct {
-		CollectionFact string `json:"collection_fact"`
+		CollectionName string
 	}
 	service struct {
 		cfg Config
 
 		aiInst *ai.Instant
 		qd     *qdrant.QdrantClient
+
+		facts core.FactStore
 	}
 )
 
@@ -39,7 +43,7 @@ func (s *service) CreateFact(ctx context.Context, ft *core.Fact) error {
 	}
 
 	params := qdrant.UpsertPointsParams{}
-	params.CollectionName = s.cfg.CollectionFact
+	params.CollectionName = s.cfg.CollectionName
 	params.PointID = ft.ID
 	params.Vector = vec
 	params.Payload = make(map[string]qdrant.UpsertPointPayloadItem)
@@ -52,9 +56,9 @@ func (s *service) CreateFact(ctx context.Context, ft *core.Fact) error {
 	return nil
 }
 
-func (s *service) FindSimilarFactsByAgentID(ctx context.Context, vec []float32, agentID uint64, topK uint64) ([]any, error) {
+func (s *service) FindSimilarFactsByAgentID(ctx context.Context, vec []float32, agentID uint64, topK uint64) ([]*core.Fact, error) {
 	result, err := s.qd.SearchPointsWithFilter(ctx, qdrant.SearchPointsParams{
-		CollectionName: s.cfg.CollectionFact,
+		CollectionName: s.cfg.CollectionName,
 		Vector:         vec,
 		TopK:           topK,
 		Key:            "agent_id",
@@ -69,30 +73,16 @@ func (s *service) FindSimilarFactsByAgentID(ctx context.Context, vec []float32, 
 		return result[i].Score > result[j].Score
 	})
 
-	// // get post details
-	// pts, err := s.facts.GetPostsByIDs(ctx, topSimilarPostIDs)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	topFactIDs := make([]uint64, 0)
+	for _, item := range result {
+		topFactIDs = append(topFactIDs, uint64(item.Payload["fact_id"].GetIntegerValue()))
+	}
 
-	// similarPostItems := make([]any, 0)
-	// for _, sim := range result {
-	// 	for _, item := range pts {
-	// 		if item.PublishedAt == nil {
-	// 			continue
-	// 		}
-	// 		if item.ID == uint64(sim.ID) {
-	// 			similarPostItems = append(similarPostItems, core.SimilarPostItem{
-	// 				PostID:        item.ID,
-	// 				Slug:          item.Slug,
-	// 				Title:         item.Title,
-	// 				Summary:       item.Summary,
-	// 				CoverImageURL: item.CoverImageURL,
-	// 				Similarity:    float64(sim.Score),
-	// 			})
-	// 			break
-	// 		}
-	// 	}
-	// }
-	return nil, nil
+	// get post details
+	fts, err := s.facts.GetFactsByIDs(ctx, topFactIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return fts, nil
 }

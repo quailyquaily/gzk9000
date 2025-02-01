@@ -52,26 +52,27 @@ func New(
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	slog.Info("[goalfinder] worker started")
-	dur := time.Millisecond
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(dur):
-			if err := w.run(ctx); err != nil {
-				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					slog.Error("[goalfinder] failed to run", "error", err)
-					dur = time.Second * 180
-				} else {
-					dur = time.Second * 180
-				}
-			} else {
-				// wait for 60s
-				dur = time.Second * 60
-			}
-		}
-	}
+	// slog.Info("[goalfinder] worker started")
+	// dur := time.Millisecond
+	// for {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		return ctx.Err()
+	// 	case <-time.After(dur):
+	// 		if err := w.run(ctx); err != nil {
+	// 			if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// 				slog.Error("[goalfinder] failed to run", "error", err)
+	// 				dur = time.Second * 180
+	// 			} else {
+	// 				dur = time.Second * 180
+	// 			}
+	// 		} else {
+	// 			// wait for 60s
+	// 			dur = time.Second * 60
+	// 		}
+	// 	}
+	// }
+	return nil
 }
 
 func (w *Worker) run(ctx context.Context) error {
@@ -144,7 +145,7 @@ func (w *Worker) run(ctx context.Context) error {
 		} else {
 			filteredGoalList = possibleGoalList
 		}
-		
+
 		fmt.Printf("filteredGoalList: %+v\n", filteredGoalList)
 
 		if err := w.insertNewGoals(ctx, ag.ID, filteredGoalList); err != nil {

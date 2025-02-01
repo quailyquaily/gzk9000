@@ -37,4 +37,8 @@ type (
 		// WHERE id IN (@ids);
 		GetFactsByIDs(ctx context.Context, ids []uint64) ([]*Fact, error)
 	}
+
+	FactService interface {
+		CreateFact(ctx context.Context, fact *Fact) error
+	}
 )

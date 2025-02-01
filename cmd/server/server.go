@@ -14,7 +14,9 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/lyricat/goutils/ai"
+	"github.com/lyricat/goutils/qdrant"
 	"github.com/quailyquaily/gzk9000/handler"
+	factZ "github.com/quailyquaily/gzk9000/service/fact"
 	memsliceZ "github.com/quailyquaily/gzk9000/service/memslice"
 	"github.com/quailyquaily/gzk9000/session"
 	"github.com/quailyquaily/gzk9000/store/agent"
@@ -23,6 +25,7 @@ import (
 	"github.com/quailyquaily/gzk9000/store/studygoal"
 	"github.com/quailyquaily/gzk9000/worker"
 	"github.com/quailyquaily/gzk9000/worker/goalfinder"
+	"github.com/quailyquaily/gzk9000/worker/looper"
 
 	"github.com/quailyquaily/gzk9000/store"
 	"github.com/rs/cors"
@@ -40,6 +43,22 @@ func NewCmd() *cobra.Command {
 			ctx := cmd.Context()
 			se := session.From(ctx)
 
+			aiInst := ai.New(ai.Config{
+				Provider:        "susanoo",
+				SusanooEndpoint: viper.GetString("susanoo.endpoint"),
+				SusanooApiKey:   viper.GetString("susanoo.api_key"),
+				Debug:           true,
+			})
+
+			qd := qdrant.New(qdrant.Config{
+				Addr:   viper.GetString("qdrant.addr"),
+				APIKey: viper.GetString("qdrant.api_key"),
+			})
+			if _, err := qd.Check(); err != nil {
+				slog.Error("[server] qdrant check failed", "error", err)
+				panic(err)
+			}
+
 			h := store.WithContext(ctx)
 
 			facts := fact.New(h)
@@ -48,13 +67,9 @@ func NewCmd() *cobra.Command {
 			studygoals := studygoal.New(h)
 
 			memslicez := memsliceZ.New(memsliceZ.Config{}, memslices, facts)
-
-			aiInst := ai.New(ai.Config{
-				Provider:        "susanoo",
-				SusanooEndpoint: viper.GetString("susanoo.endpoint"),
-				SusanooApiKey:   viper.GetString("susanoo.api_key"),
-				Debug:           true,
-			})
+			factz := factZ.New(factZ.Config{
+				CollectionName: viper.GetString("sys.collections.facts"),
+			}, aiInst, qd, facts)
 
 			// handle signals
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -65,6 +80,9 @@ func NewCmd() *cobra.Command {
 
 			workers := []worker.Worker{
 				goalfinder.New(goalfinder.Config{}, aiInst, memslicez, studygoals, agents),
+				looper.New(looper.Config{
+					TelegramToken: viper.GetString("telegram.token"),
+				}, aiInst, factz, memslices),
 			}
 
 			for idx := range workers {
