@@ -75,8 +75,8 @@ func (s *service) GetMessageChan(ctx context.Context) <-chan *loop.Message {
 			content := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, prefix))
 			messageCtx := context.WithValue(ctx, messageKey{}, update.Message)
 			msgChan <- &loop.Message{
-				ReplyContent: replyContent,
 				Context:      messageCtx,
+				ReplyContent: replyContent,
 				Content:      content,
 				UserIdentity: strconv.FormatInt(update.Message.From.ID, 10),
 				ConvKey:      strconv.FormatInt(update.Message.Chat.ID, 10),
@@ -123,19 +123,23 @@ func (b *service) HandleResult(req *loop.Message, r *loop.Result) {
 	// if the response is longer than 4096 characters, split it into multiple messages
 	// each split message should be a chunk less than 4096 characters
 	// the split should be done by line
-	if len(text) > 4096 {
-		lines := strings.Split(text, "\n")
-		chunk := ""
-		for _, line := range lines {
-			if len(chunk)+len(line) > 4096 {
-				b.sendMessage(msg.Chat.ID, chunk)
-				chunk = ""
-			}
-			chunk += line + "\n"
+	if len(text) > 4000 {
+		parts := loop.SplitMarkdown(text, 4000)
+		for _, part := range parts {
+			b.sendMessage(msg.Chat.ID, part)
 		}
-		if chunk != "" {
-			b.sendMessage(msg.Chat.ID, chunk)
-		}
+		// lines := strings.Split(text, "\n")
+		// chunk := ""
+		// for _, line := range lines {
+		// 	if len(chunk)+len(line) > 4096 {
+		// 		b.sendMessage(msg.Chat.ID, chunk)
+		// 		chunk = ""
+		// 	}
+		// 	chunk += line + "\n"
+		// }
+		// if chunk != "" {
+		// 	b.sendMessage(msg.Chat.ID, chunk)
+		// }
 	} else {
 		b.sendMessage(msg.Chat.ID, text)
 	}
@@ -146,7 +150,7 @@ func (b *service) sendMessage(chatID int64, text string) {
 	// disable web page preview
 	slog.Info("[telegram] send message", "chat_id", chatID, "size", len(text))
 	message := tgbotapi.NewMessage(chatID, text)
-	// message.ParseMode = tgbotapi.ModeMarkdown
+	message.ParseMode = tgbotapi.ModeMarkdown
 	if _, err := b.client.Send(message); err != nil {
 		slog.Error("[telegram] failed to send message", "error", err)
 	}
